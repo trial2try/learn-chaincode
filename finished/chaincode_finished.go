@@ -19,6 +19,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"encoding/json"
+	"time"
+	"strings"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
@@ -34,22 +38,73 @@ func main() {
 	}
 }
 
+var GROUPINDEX = "_groupindex"													//name for the key/value that will store a list of all known groups
+var UNCOVEREDGROUPINDEX = "_uncoveredgroupindex"								//name for the key/value that will store all un covered groups
+
+type Claim struct{
+	Amount 		int 		`json:"amount"`										//the fieldtags are needed to keep case from bouncing around
+	Timestamp 	int64 		`json:"timestamp"`									//utc timestamp of creation
+	Type 		string 		`json:"type"`
+}
+
+type Risk struct{
+	Value 		int 		`json:"value"`										
+	Premium 	int 		`json:"premium"`
+	Model 		string 		`json:"model"`
+	status 		string 		`json:"status"`
+	Claims 		[]Claim 	`json:"claims"`
+}
+
+type Member struct{
+	Name 		string 		'json:"name"'
+    Email 		string 		'json:"email"'
+    Contact 	int 		'json:"contact"'
+    HomeAddress	string 		'json:"address"'
+    Dob			string 		'json:"dob"'
+    Risks 		[]Risk 		'json:"risks"'
+}
+
+type Group struct{
+	Members		[]Member 	'json:"members"'	 
+	RiskType	string		'json:"riskType"'	
+	Status		int 		'json:"status"'
+	PoolBalance	int 		'json:"poolBalance"'
+	Insurer		string 		'json:"insurer"'
+}
+
+
 // Init resets all the things
 func (t *SimpleChaincode) Init(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {
+
 	if len(args) != 1 {
 		return nil, errors.New("Incorrect number of arguments. Expecting 1")
 	}
 
-	err := stub.PutState("hello_world", []byte(args[0]))
+	// Write the state to the ledger
+	err := stub.PutState("hello", []byte(args[0]))				//making a test var "abc", I find it handy to read/write to it right away to test the network
 	if err != nil {
 		return nil, err
 	}
-
+	
+	var empty []string
+	jsonAsBytes, _ := json.Marshal(empty)								//marshal an emtpy array of strings to clear the index
+	err = stub.PutState(marbleIndexStr, jsonAsBytes)
+	if err != nil {
+		return nil, err
+	}
+	
+	var trades AllTrades
+	jsonAsBytes, _ = json.Marshal(trades)								//clear the open trade struct
+	err = stub.PutState(openTradesStr, jsonAsBytes)
+	if err != nil {
+		return nil, err
+	}
+	
 	return nil, nil
 }
 
 // Invoke isur entry point to invoke a chaincode function
-func (t *SimpleChaincode) Invoke(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {
+func (t *SimpleChaincode) Invoke(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {							//		NEED TO ADD
 	fmt.Println("invoke is running " + function)
 
 	// Handle different functions
@@ -57,6 +112,8 @@ func (t *SimpleChaincode) Invoke(stub *shim.ChaincodeStub, function string, args
 		return t.Init(stub, "init", args)
 	} else if function == "write" {
 		return t.write(stub, args)
+	} else if function == "delete" {
+		return t.Delete(stub, args)
 	}
 	fmt.Println("invoke did not find func: " + function)
 
@@ -112,4 +169,21 @@ func (t *SimpleChaincode) read(stub *shim.ChaincodeStub, args []string) ([]byte,
 	}
 
 	return valAsbytes, nil
+}
+
+// ============================================================================================================================
+// Delete - remove a key/value pair from state
+// ============================================================================================================================
+func (t *SimpleChaincode) Delete(stub *shim.ChaincodeStub, args []string) ([]byte, error) {												//NEED TO ADD FEW MORE STATE DELETE
+	if len(args) != 1 {
+		return nil, errors.New("Incorrect number of arguments. Expecting 1")
+	}
+	
+	name := args[0]
+	err := stub.DelState(name)													//remove the key from chaincode state
+	if err != nil {
+		return nil, errors.New("Failed to delete state")
+	}
+
+	return nil, nil
 }
